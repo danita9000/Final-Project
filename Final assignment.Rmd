@@ -1,0 +1,232 @@
+---
+title: "Final assignment"
+author: "Anita Dezső"
+date: '2020 12 05 '
+output:
+  html_document: default
+  pdf_document: default
+---
+
+Loading all necessary libraries for the project.
+
+````{r,warning=FALSE,message=FALSE}
+library(tidyverse)
+library(janitor)
+library(knitr)
+library(dplyr)
+library(data.table)
+library(gdata) # this library contains rename.vars
+library(lmtest) # Breusch-Pagan Test
+library(ggpubr)
+library(ggthemes) # designing plots
+```
+
+Specify the source of the CSV file and lets read the CSV file
+```{r,warning=FALSE,message=FALSE}
+Source <- 'https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-07-14/astronauts.csv'  
+
+astronauts <- readr::read_csv(Source)# read the source file
+```
+
+Rename the 22nd column (field21) to EVA to make it more meaningful. Beyond, the study can utilize year_of_birth and year_of_mission variables to calculate the age of the astronauts at the beginning of the missions (AgeM). Furthermore, AgeS can be calculated using a similar methodology.
+```{r}
+#give a more meaningful name to the column
+astronauts<-rename.vars(astronauts,"field21","EVA",info=FALSE)
+# Calculating the age of the astronauts at their selection
+astronauts$AgeS <- astronauts$year_of_selection - astronauts$year_of_birth
+
+# Calculating the age of the astronauts at their first mission
+astronauts$AgeM <- astronauts$year_of_mission - astronauts$year_of_birth
+
+# calculate the difference between their selection and their first mission
+for(a in 1:1277) { # using for loop to calculate every row
+    if (astronauts[a,20] == astronauts[a,21]) { # if it is the first mission then hrs of the mission should be equal with the total hrs on missions.
+    astronauts[a,27] <-(astronauts[a,26]-astronauts[a,25]) # take the difference
+    } else {
+    astronauts[a,27] <- 0 # if not the first mission make equal with 0
+    }
+}
+
+# calculate the mean 
+testdf<- astronauts[,27]
+mean(testdf$AgeM, na.rm = TRUE)  
+astronauts[,27] <-NULL # remove the column to avoid duplicated columns
+```
+
+The research applies the above-mentioned two measurements to estimate the average time between the astronauts first missions and their selection. As the results show, it takes on average 0.678 year to train and prepare the astronauts for the given mission.
+
+```{r}
+# get the min and the max value to make the Agebreaks
+summary(astronauts$AgeM)
+```
+
+```{r}
+# use histogram to have a basic understanding of the distribution of the AgeM
+hist(astronauts$AgeM,
+    main="Histogram of astronauts by age", 
+    xlab="Astronauts age",
+    xlim=c(20,80))
+```
+
+We should get a basic understanding of the distribution of the AgeM. That is why the paper applies summary and histogram functions.The above-mentioned table indicates that the youngest astronaut was 26 years old, while the oldest was 77 years old. In addition to this, mean is 42.91, while the median is only 42.00. This indicates that distribution is skewed to the right (histogram confirms this hypothesis). The study can transform the AgeM variable to make it more convenient to plot. 
+```{r}
+# create Agebreaks based on the summary statistics
+Agebreaks <- c(25,29,39,49,59,78)
+
+#labeling of the new categories
+AgeLabels <- c("26-29","30-39","40-49","50-59","60-77")
+
+# dividing the AgeM into subgroups by cut function
+astronauts$AgeMG <- cut(astronauts$AgeM,Agebreaks,labels = AgeLabels)
+```
+
+```{r}
+# analyzing the distribution of the age according to gender
+astronauts %>% 
+  count(sex)
+ggplot(astronauts,aes(AgeMG,fill=sex)) +
+  geom_bar() + 
+  labs(title ="Distribution of astronauts by age and gender" , # add title
+       x = "Age")
+```
+
+The table shows, that most of the astronauts were male, approximately 90% of them. However, this ratio is significantly better between 30-49 years.
+
+```{r}
+# get a basic understanding of occupation
+astronauts %>% 
+  count(occupation)
+# most popular occupations: Commander,Flight engineer, pilot,PSP
+# duplicated categories due to lower and uppercase letters (pilot,Pilot)
+  astronauts$occupation <- tolower(astronauts$occupation)
+# solve the issue mentioned-above
+# creating the other category including 
+#creating a vector 
+categories<- c("other (journalist)","other (space tourist)","space tourist", "spaceflight participant")
+#renaming them to other
+astronauts$occupation[astronauts$occupation %in% categories] <- c("other")
+
+# check the new categories
+astronauts %>% 
+count(occupation)
+```
+```{r}
+# looking for further duplicated data
+astronauts %>% 
+count(military_civilian)
+# looking for further duplicated data
+astronauts %>% 
+count(nationality)
+```
+
+After the observation of the occupation variable, it turns out that  there are duplicated categories due to lower and uppercase letters such as pilot or Pilot. Furthermore, there are many categories with less than 5 observations. The study merged them into one other category. As a result of these,  the research eliminates 6 different categories.
+
+```{r}
+ggplot(astronauts,aes(occupation,fill=sex)) + # set up aesthetic
+  geom_bar()+ # create a bar chart
+labs(title ="Distribution of occupation by gender" , # add title and axis titles
+       x = "Occupation", 
+       y = "count")
+```
+
+The table shows, that the only msp category has considerable amount of female workers. 
+```{r}
+# call ggplot2 
+
+p4 <- ggplot(astronauts, 
+             aes(x = year_of_selection, 
+                 y = hours_mission)) # set up aesthetic
+p4 + geom_point() + # point geom
+  geom_smooth() + # add smooth geom
+  theme_economist() +  # add theme
+  labs(title ="Hours of missions based on years of selection" , # add title and axis titles
+       x = "Year of selection",
+       y = "Hours mission")
+```
+
+The following graph illustrates the correlation between year of selection and hours of the missions. There are two inflection points, one in 1970 and another in 2010. However, between these two dates a positive correlation can be observed, that is getting steeper over time. Beyond, graph also illustrates that there are plenty outliers in the dataset. This variable is not sufficient to explain hours mission variable separately (large residuals)
+```{r}
+
+p4 <- ggplot(astronauts, 
+             aes(x = AgeM, 
+                 y = hours_mission)) # set up aesthetic
+p4 + geom_point() + # point geom
+  geom_smooth(color = "red") + # add smooth geom and change the color to red
+  geom_rangeframe() +
+  theme_tufte() + # add theme
+  labs(title ="Hours of missions based on age" ,  # add title and axis titles
+       x = "Age",
+       y = "Hours mission")
+```
+
+There is a positive correlation between age and hours of missions. This variable is not sufficient to explain hours mission variable separately (large residuals). It can be mainly due to the outliers
+```{r}
+p5 <- ggplot(astronauts, 
+             aes(x = AgeM, y = hours_mission, 
+                 color = occupation)) # aesthetic includes color by group
+
+p5 + geom_point() + 
+  geom_smooth() + # add smooth geom
+  facet_wrap(~occupation) + # facets or "small multiples" by group
+  theme_economist() + # add theme
+  scale_color_economist() + # add scale color
+  labs(title ="Hours of missions based on age and by occupations", # add title and axis titles
+       x = "Age",
+       y = "Hours mission")
+```
+
+There are significant differences in hours mission based on occupation.Furthermore, Age seems to be  able to explain the fluctuation in hours mission variable only in some occupation.
+
+ANOVA test 
+The one-way analysis of variance (ANOVA) is used to determine whether there are any statistically significant differences between occupations on hours_mission variable. The below-mentioned table compares the mean of the occupations. It indicates that they are statistically significantly different from each other.
+```{r}
+aggregate(hours_mission~occupation,astronauts,mean)
+anova_1 = aov(astronauts$hours_mission~astronauts$occupation)
+summary(anova_1)
+TukeyHSD(anova_1)
+```
+
+Since the P-value of ANOVA test is smaller than any significance level and F value is higher than the critical value. That is why we can reject the null hypothesis and conclude that The differences between some of the means are statistically significant. In addition to this, Tukey test is performed at 95% confidence level. Approximately, the half of the pairs have a statistically different mean.
+
+```{r}
+# add year_of_mission to the equation
+Reg2<- lm(hours_mission ~ AgeM +total_eva_hrs  + year_of_mission, data = astronauts)
+summary(Reg2) # get the summary statistic
+```
+It is obvious that adding occupation as a dummy variable to the regression, that would significantly increase the R squared. In the second regression, independent variables can explain 44.96 % of the dependent variable.
+F tests estimate the overall significance of the model. As the name suggests, the test statistics follow the F-distribution.
+H0: β1 = 0
+HA: β1 ≠ 0
+
+The critical value of the F-distribution at 1% significance level is F (1, ∞) = 6.63. The F-statistic (129.4) is significantly higher than the critical value and the P- value is considerably lower than any significance level. Therefore, we can reject the null-hypothesis and conclude that these regressions are significant. It means that the above-mentioned models provide a better fit than the intercept-only models.
+
+The independent variables except AgeM are statistically significant since T-statistics are considerably higher than the critical value (1.96 at 5% significance level) and the P- value is considerably lower than any significance levels. Therefore, the coefficients are significantly different to 0.
+
+There is a positive correlation between the dependent variable and total_eva_hrs, year_of_mission and occupationflight engineer. This indicates,that the length of the extravehicular activity makes the mission longer. Beyond, we can conclude that on average missions tend to be longer nowadays.
+```{r}
+# add occupation as a categorical dummy variable to the equation
+Reg3<- lm(hours_mission ~ AgeM +total_eva_hrs  + year_of_mission + occupation, data = astronauts)
+summary(Reg3) # get the summary statistic
+```
+
+
+Basic Assumptions:
+The regression satisfies the basic assumptions and requirements. Since the mission_hours variable is continuous and a ratio variable. Both the independent and the dependent variables have some variance. The observations are independent of each others.
+
+The research test distribution of the residuals. The below-mentioned graphs clearly indicate that the residuals does not equal as we change the x variable. Furthermore, the Cook’s distance is higher than one.
+
+```{r}
+par(mfrow=c(2,2)) # init 4 charts in 1 panel
+plot(Reg3)
+bptest(Reg3) # Breusch-Pagan Test for heteroscedasticity 
+```
+
+Breusch-Pagan Test is also applied to test for heteroscedasticity.Test statistic has a p-value below any appropriate significance level(e.g. p < 0.05). Therefore we should reject then the null hypothesis of homoskedasticity and heteroskedasticity is assumed. 
+
+Normality testing
+```{r}
+ggqqplot(Reg3$residuals) # plot the residuals
+shapiro.test(Reg3$residuals) # use Shapiro-Wilk’s test.
+```
+
+The residuals should follow normal distribution. The study applies Shapiro–Wilk test. Since the  p value is less than any significance level. That is why, we should reject the null-hypothesis and conclude that the residuals are not normally distributed. Naturally, it can due to the presence of outliers.
